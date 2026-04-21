@@ -105,7 +105,7 @@ ER-диаграмма базы данных представлена на Рис
 ### 1) Клонировать репозиторий и перейти в папку проекта
 
 ```powershell
-git clone <YOUR_REPO_URL>
+git clone https://github.com/kof3stt/csfloat-sales-parser.git
 cd CSFloat_sales_parser
 ```
 
@@ -392,7 +392,7 @@ Below is a step-by-step workflow from cloning the repository to running the pars
 ### 1) Clone the repository and enter the project directory
 
 ```powershell
-git clone <YOUR_REPO_URL>
+git clone https://github.com/kof3stt/csfloat-sales-parser.git
 cd CSFloat_sales_parser
 ```
 
