@@ -106,7 +106,7 @@ ER-диаграмма базы данных представлена на Рис
 
 ```powershell
 git clone https://github.com/kof3stt/csfloat-sales-parser.git
-cd CSFloat_sales_parser
+cd csfloat-sales-parser
 ```
 
 ### 2) Установить зависимости (используйте пакетный менеджер uv)
@@ -393,7 +393,7 @@ Below is a step-by-step workflow from cloning the repository to running the pars
 
 ```powershell
 git clone https://github.com/kof3stt/csfloat-sales-parser.git
-cd CSFloat_sales_parser
+cd csfloat-sales-parser
 ```
 
 ### 2) Install dependencies (use uv)
