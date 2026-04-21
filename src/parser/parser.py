@@ -34,6 +34,9 @@ class CSFloatParser:
 
     def __init__(self) -> None:
         profile_path = os.path.abspath("chrome_profile")
+        self._is_first_run_profile = (not os.path.isdir(profile_path)) or (
+            os.path.isdir(profile_path) and not os.listdir(profile_path)
+        )
 
         self._load_config()
         self._setup_logger()
@@ -121,13 +124,11 @@ class CSFloatParser:
     def login(self) -> None:
         self.browser.get("https://csfloat.com/")
 
-        profile_path = os.path.abspath("chrome_profile")
-
-        if not os.path.exists(profile_path):
+        if self._is_first_run_profile:
             self.logger.warning(
-                "Chrome profile not found. "
-                "Please authorize manually in browser. "
-                "Waiting 600 seconds..."
+                "Chrome profile is missing/empty (first run). "
+                "Please authorize manually in the opened browser window. "
+                "Waiting up to 600 seconds for the UI to become available..."
             )
             time.sleep(600)
 
