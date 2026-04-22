@@ -190,7 +190,7 @@ class CSFloatParser:
                 self.logger.error(f"No items found: {hash_name}")
                 return
 
-            self._open_first_item()
+            self._open_first_item(hash_name)
             self._open_latest_sales()
 
             if self._is_no_sales():
@@ -203,7 +203,7 @@ class CSFloatParser:
             self._reset_to_search()
 
     def _normalize_name(self, hash_name: str) -> str:
-        name = re.sub(r"^(StatTrak™|Souvenir)\s+", "", hash_name)
+        name = re.sub(r"^(StatTrak™|Souvenir|★ StatTrak™)\s+", "", hash_name)
         name = re.sub(r"\s*\([^)]+\)$", "", name)
         return name
 
@@ -233,9 +233,8 @@ class CSFloatParser:
 
     def _apply_filters(self, hash_name: str) -> None:
         self._apply_wear_filter(hash_name)
-        time.sleep(0.5)
         self._apply_type_filter(hash_name)
-        time.sleep(5)
+        time.sleep(2.5)
 
     def _apply_wear_filter(self, hash_name):
         wear_map = {
@@ -259,8 +258,8 @@ class CSFloatParser:
                 elem.click()
                 return
 
-    def _apply_type_filter(self, hash_name):
-        if hash_name.startswith("StatTrak"):
+    def _apply_type_filter(self, hash_name: str):
+        if hash_name.startswith("StatTrak") or hash_name.startswith("★ StatTrak"):
             self.browser.find_element(By.ID, "mat-mdc-checkbox-0-input").click()
         elif hash_name.startswith("Souvenir"):
             self.browser.find_element(By.ID, "mat-mdc-checkbox-1-input").click()
@@ -279,12 +278,56 @@ class CSFloatParser:
             )
         )
 
-    def _open_first_item(self):
+    def _open_first_item(self, hash_name: str):
         items = WebDriverWait(self.browser, 10).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "item-card"))
         )
         self.logger.info(f"Found {len(items)} items")
-        items[0].click()
+
+        target_stattrak = "StatTrak™" in hash_name
+        target_souvenir = "Souvenir" in hash_name
+
+        wear_map = {
+            "Factory New": "Factory New",
+            "Minimal Wear": "Minimal Wear",
+            "Field-Tested": "Field-Tested",
+            "Well-Worn": "Well-Worn",
+            "Battle-Scarred": "Battle-Scarred",
+        }
+
+        target_wear = None
+        for key in wear_map:
+            if key in hash_name:
+                target_wear = key
+                break
+
+        for item in items:
+            try:
+                subtext_elem = item.find_element(By.CSS_SELECTOR, ".subtext")
+                subtext_text = subtext_elem.text
+
+                spans = subtext_elem.find_elements(By.TAG_NAME, "span")
+                is_stattrak = any("StatTrak" in s.text for s in spans)
+
+                is_souvenir = "Souvenir" in subtext_text
+
+                wear_match = target_wear in subtext_text if target_wear else True
+
+                if (
+                    is_stattrak == target_stattrak
+                    and is_souvenir == target_souvenir
+                    and wear_match
+                ):
+                    self.logger.debug(
+                        f"Matched item: ST={is_stattrak}, Souvenir={is_souvenir}, Wear={target_wear}"
+                    )
+                    item.click()
+                    return
+
+            except Exception as e:
+                self.logger.warning(f"Error checking item: {e}")
+
+        raise ValueError(f"No matching item found for {hash_name}")
 
     def _open_latest_sales(self):
         latest_sales_elem = WebDriverWait(self.browser, 10).until(
