@@ -49,7 +49,9 @@ class Item(Base):
         return cls(
             name=hash_name,
             is_souvenir=hash_name.startswith("Souvenir"),
-            is_stattrak=hash_name.startswith("StatTrak"),
+            is_stattrak=(
+                hash_name.startswith("StatTrak") or hash_name.startswith("★ StatTrak")
+            ),
         )
 
     def __repr__(self) -> str:

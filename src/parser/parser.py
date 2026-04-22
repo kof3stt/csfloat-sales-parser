@@ -48,6 +48,9 @@ class CSFloatParser:
             "excludeSwitches", ["enable-automation", "enable-logging"]
         )
         self.chrome_options.add_argument(f"--user-data-dir={profile_path}")
+        self.chrome_options.add_argument("--disable-background-timer-throttling")
+        self.chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        self.chrome_options.add_argument("--disable-renderer-backgrounding")
 
         self.browser = webdriver.Chrome(options=self.chrome_options)
 
@@ -318,7 +321,7 @@ class CSFloatParser:
                     and is_souvenir == target_souvenir
                     and wear_match
                 ):
-                    self.logger.debug(
+                    self.logger.info(
                         f"Matched item: ST={is_stattrak}, Souvenir={is_souvenir}, Wear={target_wear}"
                     )
                     item.click()
@@ -343,18 +346,26 @@ class CSFloatParser:
                 (By.CSS_SELECTOR, "item-latest-sales table tbody tr")
             )
         )
+        total = len(rows)
 
-        self.logger.info(f"Found {len(rows)} sales")
+        self.logger.info(f"Found {total} sales")
 
-        for row in rows:
+        for idx, row in enumerate(rows, start=1):
             sale_data = self._parse_single_sale(row)
 
             if self._is_duplicate(hash_name, sale_data):
-                self.logger.info(f"Duplicate detected, stop parsing {hash_name}")
+                self.logger.info(
+                    f"Duplicate detected, stop parsing {hash_name}, sale [{idx} / {total}]"
+                )
                 break
 
             try:
                 self.queue.put((hash_name, sale_data), timeout=10)
+                self.logger.debug(
+                    f"Queued sale for {hash_name} | price={sale_data['price']} | "
+                    f"date={sale_data['datetime']}, sale [{idx} / {total}]"
+                )
+
             except queue.Full:
                 self.logger.warning("Queue is full, skipping sale")
 
@@ -392,7 +403,14 @@ class CSFloatParser:
 
     def _parse_reference_tooltip(self, sale_elem):
         try:
-            icon_elem = sale_elem.find_element(By.CSS_SELECTOR, ".reference")
+            elems = sale_elem.find_elements(By.CSS_SELECTOR, ".reference")
+
+            if not elems:
+                self.logger.warning(f"Found no global listings and base price for the sale")
+                return {}
+
+            icon_elem = elems[0]
+
             ActionChains(self.browser).move_to_element(icon_elem).perform()
 
             tooltip = self._get_last_tooltip()
