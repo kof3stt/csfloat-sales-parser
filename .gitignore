@@ -45,3 +45,6 @@ Backups/
 backups/
 *.sql
 *.dump
+
+# Config
+config.toml
