@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import random
 import tomllib
 import logging
 import queue
@@ -179,7 +180,16 @@ class CSFloatParser:
         )
         market_elem.click()
 
+    def _wait_search_result_or_error(self, timeout=10):
+        WebDriverWait(self.browser, timeout).until(
+            lambda d: (
+                d.find_elements(By.TAG_NAME, "item-card")
+                or d.find_elements(By.CSS_SELECTOR, "div.error-container")
+            )
+        )
+
     def _process_item(self, item: Dict[str, Any]) -> None:
+        max_retries = 5
         try:
             hash_name = item["name"]
             skin_name = self._normalize_name(hash_name)
@@ -189,8 +199,26 @@ class CSFloatParser:
             self._search_item(skin_name)
             self._apply_filters(hash_name)
 
+            self._wait_search_result_or_error()
+
+            is_rate_limit = self._is_rate_limit()
+            while is_rate_limit:
+                for attempt in range(max_retries):
+                    self._handle_rate_limit(attempt)
+                    self._wait_search_result_or_error()
+                    is_rate_limit = self._is_rate_limit()
+                    if not is_rate_limit:
+                        break
+                break
+
+            if is_rate_limit:
+                self.logger.error(
+                    f"Failed to process {hash_name} after {max_retries} retries"
+                )
+                raise
+
             if self._is_no_items():
-                self.logger.error(f"No items found: {hash_name}")
+                self.logger.warning(f"No items found: {hash_name}")
                 return
 
             self._open_first_item(hash_name)
@@ -204,6 +232,32 @@ class CSFloatParser:
 
         finally:
             self._reset_to_search()
+
+    def _is_rate_limit(self) -> bool:
+        containers_error = self.browser.find_elements(
+            By.CSS_SELECTOR, "div.error-container .sub-text span"
+        )
+
+        if not containers_error:
+            return False
+
+        error_text = containers_error[0].text.lower()
+        if "too many requests" in error_text or "failed to fetch items" in error_text:
+            return True
+
+        return False
+
+    def _handle_rate_limit(self, attempt: int) -> None:
+        delay = 2 ** (attempt + 8) + random.uniform(1, 5)
+
+        self.logger.error(
+            f"Rate limit detected. Attempt {attempt}. Sleeping {delay:.2f}s..."
+        )
+
+        time.sleep(delay)
+
+        self.logger.info("Refreshing page after rate limit...")
+        self.browser.refresh()
 
     def _normalize_name(self, hash_name: str) -> str:
         name = re.sub(r"^(StatTrak™|Souvenir|★ StatTrak™)\s+", "", hash_name)
@@ -406,7 +460,9 @@ class CSFloatParser:
             elems = sale_elem.find_elements(By.CSS_SELECTOR, ".reference")
 
             if not elems:
-                self.logger.warning(f"Found no global listings and base price for the sale")
+                self.logger.warning(
+                    f"Found no global listings and base price for the sale"
+                )
                 return {}
 
             icon_elem = elems[0]
