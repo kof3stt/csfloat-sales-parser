@@ -50,6 +50,7 @@
 | `name` | `text` | Хэш-имя предмета в Steam |
 | `is_souvenir` | `boolean` | Признак Souvenir (является ли предмет сувенирным) |
 | `is_stattrak` | `boolean` | Признак StatTrak (обладает ли предмет технологией StatTrak) |
+| `last_parsed_at` | `timestamp` | Дата и время последнего парсинга предмета |
 
 ⚠️ Обратите внимание на то, что следующие предметы имеют разные хэш-имена:
 - AWP | Dragon Lore (Factory New);
@@ -335,6 +336,7 @@ Stores unique item **hash names** without linking to a specific sale.
 | `name` | `text` | Steam item hash name |
 | `is_souvenir` | `boolean` | Souvenir flag |
 | `is_stattrak` | `boolean` | StatTrak flag |
+| `last_parsed_at` | `timestamp` | Last time the item was parsed by the scraper |
 
 ⚠️ Note that the following items have different hash names:
 

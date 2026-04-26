@@ -34,6 +34,8 @@ class Item(Base):
     is_souvenir = Column(Boolean, nullable=False, default=False)
     is_stattrak = Column(Boolean, nullable=False, default=False)
 
+    last_parsed_at = Column(DateTime, nullable=True)
+
     sales = relationship(
         "Sale",
         back_populates="item",

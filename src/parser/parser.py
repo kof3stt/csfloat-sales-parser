@@ -5,7 +5,7 @@ import random
 import tomllib
 import logging
 import queue
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict
 
 from selenium import webdriver
@@ -188,10 +188,24 @@ class CSFloatParser:
             )
         )
 
+    def should_parse_item(self, hash_name: str) -> bool:
+        with self.db.get_session() as session:
+            item = session.query(Item).filter_by(name=hash_name).first()
+
+            if not item or not item.last_parsed_at:
+                return True
+
+            return datetime.now() - item.last_parsed_at > timedelta(hours=24)
+
     def _process_item(self, item: Dict[str, Any]) -> None:
         max_retries = 5
         try:
             hash_name = item["name"]
+
+            if not self.should_parse_item(hash_name):
+                self.logger.info(f"Skip {hash_name}: parsed recently")
+                return
+            
             skin_name = self._normalize_name(hash_name)
 
             self.logger.info(f"Processing item: {skin_name} [{hash_name}]")
@@ -229,9 +243,16 @@ class CSFloatParser:
                 return
 
             self._parse_sales(hash_name)
+            self._mark_item_parsed(hash_name)
 
         finally:
             self._reset_to_search()
+
+    def _mark_item_parsed(self, hash_name: str):
+        with self.db.get_session() as session:
+            item = session.query(Item).filter_by(name=hash_name).first()
+            if item:
+                item.last_parsed_at = datetime.now()
 
     def _is_rate_limit(self) -> bool:
         containers_error = self.browser.find_elements(
@@ -248,7 +269,8 @@ class CSFloatParser:
         return False
 
     def _handle_rate_limit(self, attempt: int) -> None:
-        delay = 2 ** (attempt + 8) + random.uniform(1, 5)
+        delay_map = {0: 800, 1: 100, 2:200, 3:300, 4:600}
+        delay = delay_map[attempt] + random.uniform(1, 5)
 
         self.logger.error(
             f"Rate limit detected. Attempt {attempt}. Sleeping {delay:.2f}s..."
