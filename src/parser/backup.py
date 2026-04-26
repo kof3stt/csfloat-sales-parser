@@ -42,17 +42,17 @@ def create_db_backup() -> Optional[str]:
     command: list[str] = [
         "pg_dump",
         "-h",
-        settings.DB_HOST,
+        str(settings.DB_HOST),
         "-p",
-        settings.DB_PORT,
+        str(settings.DB_PORT),
         "-U",
-        settings.DB_USER,
+        str(settings.DB_USER),
         "-F",
         "c",
         "-b",
         "-f",
-        backup_path,
-        settings.DB_NAME,
+        str(backup_path),
+        str(settings.DB_NAME),
     ]
 
     env = os.environ.copy()
