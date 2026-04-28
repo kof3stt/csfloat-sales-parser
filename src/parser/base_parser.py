@@ -59,3 +59,14 @@ class BaseParser(ABC):
         Must be implemented by subclasses.
         """
         raise NotImplementedError
+
+    def close(self) -> None:
+        """
+        Graceful shutdown hook.
+
+        Should:
+        - stop workers
+        - flush queues
+        - release resources
+        """
+        pass

@@ -25,6 +25,16 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class ItemConfig:
+    """
+    Item configuration.
+    """
+
+    name: str
+    parse_interval_hours: int | None = None
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """
     Root application configuration.
@@ -34,7 +44,7 @@ class AppConfig:
     currency: str
     browser: BrowserConfig
     logging: LoggingConfig
-    items: List[Dict[str, Any]]
+    items: List[ItemConfig]
 
 
 def load_config(path: str = "config.toml") -> AppConfig:
@@ -69,5 +79,11 @@ def load_config(path: str = "config.toml") -> AppConfig:
         currency=raw.get("currency", "USD"),
         browser=browser_config,
         logging=logging_config,
-        items=raw.get("items", []),
+        items=[
+            ItemConfig(
+                name=i["name"],
+                parse_interval_hours=i.get("parse_interval_hours"),
+            )
+            for i in raw.get("items", [])
+        ],
     )

@@ -4,6 +4,7 @@ import time
 import random
 import logging
 import queue
+from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
@@ -20,6 +21,7 @@ from src.parser.database import DatabaseManager
 from src.parser.db_worker import DBWorker
 from src.parser.config import settings
 from src.parser.models import Item
+from src.parser.config_loader import ItemConfig
 
 
 class CSFloatParser(BaseParser):
@@ -73,15 +75,33 @@ class CSFloatParser(BaseParser):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.logger.info("Waiting for queue to be processed...")
+        self.close()
 
-        self.queue.join()
+    def close(self) -> None:
+        """
+        Graceful shutdown of parser resources.
+        Safe to call multiple times.
+        """
+        if getattr(self, "_closed", False):
+            return
 
-        self.logger.info("Stopping DB worker...")
-        self.worker.stop()
-        self.worker.join()
+        self._closed = True
 
-        self.browser.quit()
+        self.logger.info("Closing parser...")
+
+        if hasattr(self, "queue"):
+            self.logger.info("Waiting for queue to be processed...")
+            self.queue.join()
+
+        if hasattr(self, "worker"):
+            self.logger.info("Stopping DB worker...")
+            self.worker.stop()
+            self.worker.join()
+
+        if hasattr(self, "browser"):
+            self.browser.quit()
+
+        self.logger.info("Parser closed successfully")
 
     def _setup_logger(self):
         log_dir = self.config.logging.dir
@@ -162,10 +182,9 @@ class CSFloatParser(BaseParser):
         self._open_market()
 
         for item_cfg in self.config.items:
-            hash_name = item_cfg["name"]
 
-            if not self.should_parse_item(hash_name):
-                self.logger.info(f"Skip {hash_name}: parsed recently")
+            if not self.should_parse_item(item_cfg):
+                self.logger.info(f"Skip {item_cfg.name}: parsed recently")
                 continue
 
             try:
@@ -174,7 +193,7 @@ class CSFloatParser(BaseParser):
 
             except Exception as e:
                 self.logger.error(
-                    f"Error processing {hash_name}: {e}",
+                    f"Error processing {item_cfg.name}: {e}",
                     exc_info=True,
                 )
 
@@ -194,19 +213,26 @@ class CSFloatParser(BaseParser):
             )
         )
 
-    def should_parse_item(self, hash_name: str) -> bool:
+    def should_parse_item(self, item: ItemConfig) -> bool:
+        hash_name = item.name
+
+        item_interval = item.parse_interval_hours
+        global_interval = self.browser_config.parse_interval_hours
+
+        interval = item_interval if item_interval is not None else global_interval
+
         with self.db.get_session() as session:
-            item = session.query(Item).filter_by(name=hash_name).first()
+            db_item = session.query(Item).filter_by(name=hash_name).first()
 
-            if not item or not item.last_parsed_at:
-                return True
+            if not db_item or not db_item.last_parsed_at:
+                        return True
 
-            delta = datetime.now() - item.last_parsed_at
+            delta = datetime.now() - db_item.last_parsed_at
 
-            return delta > timedelta(hours=self.browser_config.parse_interval_hours)
+            return delta > timedelta(hours=interval)
 
-    def _process_item(self, item: Dict[str, Any]) -> None:
-        hash_name = item["name"]
+    def _process_item(self, item_cfg: ItemConfig) -> None:
+        hash_name = item_cfg.name
         skin_name = self._normalize_name(hash_name)
 
         try:
@@ -218,7 +244,7 @@ class CSFloatParser(BaseParser):
             self._wait_search_result_or_error()
 
             self._handle_rate_limit(hash_name)
-            
+
             if self._is_no_items():
                 self.logger.warning(f"No items found: {hash_name}")
                 return
@@ -468,7 +494,7 @@ class CSFloatParser(BaseParser):
             )
             price_text = price_elem.text.replace(",", "")
             price = re.sub(r"[^\d.]", "", price_text)
-            return float(price)
+            return Decimal(price)
         except Exception as e:
             self.logger.error(f"Error parsing price: {e}", exc_info=True)
             return None
@@ -501,7 +527,7 @@ class CSFloatParser(BaseParser):
 
             if "Base Price:" in data:
                 val = data["Base Price:"].replace(",", "")
-                result["base_price"] = float(
+                result["base_price"] = Decimal(
                     "".join(c for c in val if c.isdigit() or c == ".")
                 )
 

@@ -34,10 +34,6 @@ def run_parser() -> None:
             parser.login()
             parser.start()
 
-            queue = getattr(parser, "queue", None)
-            if queue is not None:
-                queue.join()
-
             logger.info("All tasks processed")
 
     except KeyboardInterrupt:

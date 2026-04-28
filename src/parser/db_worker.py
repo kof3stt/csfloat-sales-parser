@@ -85,9 +85,16 @@ class DBWorker(threading.Thread):
                     item = item_cache[hash_name]
                     self.db.save_sale(session, item, sale_data)
 
-                finally:
-                    self.q.task_done()
-
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to process sale {hash_name}: {e}",
+                        exc_info=True,
+                    )
+                    continue
+        
+        for _ in batch:
+            self.q.task_done()
+            
         logger.debug(f"Saved batch of {len(batch)} sales")
 
     def stop(self) -> None:
