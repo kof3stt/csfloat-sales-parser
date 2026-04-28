@@ -2,7 +2,6 @@ import os
 import re
 import time
 import random
-import tomllib
 import logging
 import queue
 from datetime import datetime, timedelta
@@ -15,6 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
+from src.parser.base_parser import BaseParser
 from src.parser.enums import Currency
 from src.parser.database import DatabaseManager
 from src.parser.db_worker import DBWorker
@@ -22,7 +22,7 @@ from src.parser.config import settings
 from src.parser.models import Item
 
 
-class CSFloatParser:
+class CSFloatParser(BaseParser):
     """
     Selenium-based parser for CSFloat market data.
 
@@ -33,16 +33,18 @@ class CSFloatParser:
     - Sending data to DB worker queue
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config) -> None:
         profile_path = os.path.abspath("chrome_profile")
         self._is_first_run_profile = (not os.path.isdir(profile_path)) or (
             os.path.isdir(profile_path) and not os.listdir(profile_path)
         )
 
-        self._load_config()
+        self.config = config
+        self.browser_config = config.browser
+
         self._setup_logger()
 
-        self.currency = Currency(self.config.get("currency", "USD").upper())
+        self.currency = Currency(self.config.currency)
 
         self.chrome_options = webdriver.ChromeOptions()
         self.chrome_options.add_experimental_option(
@@ -81,13 +83,9 @@ class CSFloatParser:
 
         self.browser.quit()
 
-    def _load_config(self) -> None:
-        with open("config.toml", "rb") as file:
-            self.config = tomllib.load(file)
-
     def _setup_logger(self):
-        log_dir = self.config.get("logging", {}).get("dir", "logs")
-        log_level = self.config.get("logging", {}).get("level", "INFO").upper()
+        log_dir = self.config.logging.dir
+        log_level = self.config.logging.level.upper()
 
         os.makedirs(log_dir, exist_ok=True)
 
@@ -163,12 +161,20 @@ class CSFloatParser:
     def start(self) -> None:
         self._open_market()
 
-        for item in self.config["items"]:
+        for item_cfg in self.config.items:
+            hash_name = item_cfg["name"]
+
+            if not self.should_parse_item(hash_name):
+                self.logger.info(f"Skip {hash_name}: parsed recently")
+                continue
+
             try:
-                self._process_item(item)
+                self._process_item(item_cfg)
+                time.sleep(self.browser_config.min_timeout)
+
             except Exception as e:
                 self.logger.error(
-                    f"Error processing {item['name']}: {e}",
+                    f"Error processing {hash_name}: {e}",
                     exc_info=True,
                 )
 
@@ -195,19 +201,15 @@ class CSFloatParser:
             if not item or not item.last_parsed_at:
                 return True
 
-            return datetime.now() - item.last_parsed_at > timedelta(hours=24)
+            delta = datetime.now() - item.last_parsed_at
+
+            return delta > timedelta(hours=self.browser_config.parse_interval_hours)
 
     def _process_item(self, item: Dict[str, Any]) -> None:
-        max_retries = 5
+        hash_name = item["name"]
+        skin_name = self._normalize_name(hash_name)
+
         try:
-            hash_name = item["name"]
-
-            if not self.should_parse_item(hash_name):
-                self.logger.info(f"Skip {hash_name}: parsed recently")
-                return
-            
-            skin_name = self._normalize_name(hash_name)
-
             self.logger.info(f"Processing item: {skin_name} [{hash_name}]")
 
             self._search_item(skin_name)
@@ -215,22 +217,8 @@ class CSFloatParser:
 
             self._wait_search_result_or_error()
 
-            is_rate_limit = self._is_rate_limit()
-            while is_rate_limit:
-                for attempt in range(max_retries):
-                    self._handle_rate_limit(attempt)
-                    self._wait_search_result_or_error()
-                    is_rate_limit = self._is_rate_limit()
-                    if not is_rate_limit:
-                        break
-                break
-
-            if is_rate_limit:
-                self.logger.error(
-                    f"Failed to process {hash_name} after {max_retries} retries"
-                )
-                raise
-
+            self._handle_rate_limit(hash_name)
+            
             if self._is_no_items():
                 self.logger.warning(f"No items found: {hash_name}")
                 return
@@ -268,18 +256,26 @@ class CSFloatParser:
 
         return False
 
-    def _handle_rate_limit(self, attempt: int) -> None:
-        delay_map = {0: 800, 1: 100, 2:200, 3:300, 4:600}
-        delay = delay_map[attempt] + random.uniform(1, 5)
+    def _handle_rate_limit(self, hash_name: str) -> None:
+        policy = self.browser_config.timeout_policy
 
-        self.logger.error(
-            f"Rate limit detected. Attempt {attempt}. Sleeping {delay:.2f}s..."
-        )
+        for attempt, base_delay in enumerate(policy):
+            if not self._is_rate_limit():
+                return
 
-        time.sleep(delay)
+            delay = base_delay + random.uniform(1, 5)
 
-        self.logger.info("Refreshing page after rate limit...")
-        self.browser.refresh()
+            self.logger.warning(
+                "Rate limit hit for %s | attempt=%d | sleep=%.2fs",
+                hash_name,
+                attempt + 1,
+                delay,
+            )
+
+            time.sleep(delay)
+            self.browser.refresh()
+
+        raise RuntimeError(f"Rate limit exceeded for {hash_name}")
 
     def _normalize_name(self, hash_name: str) -> str:
         name = re.sub(r"^(StatTrak™|Souvenir|★ StatTrak™)\s+", "", hash_name)

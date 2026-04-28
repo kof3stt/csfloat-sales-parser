@@ -50,10 +50,8 @@ class DBWorker(threading.Thread):
             batch: List[SaleQueueItem] = []
 
             try:
-                # Always block for at least one item
                 batch.append(self.q.get(timeout=self.timeout))
 
-                # Fill batch up to batch_size
                 while len(batch) < self.batch_size:
                     try:
                         batch.append(self.q.get_nowait())
@@ -79,7 +77,6 @@ class DBWorker(threading.Thread):
 
             for hash_name, sale_data in batch:
                 try:
-                    # cache Item objects within batch
                     if hash_name not in item_cache:
                         item_cache[hash_name] = self.db.get_or_create_item(
                             session, hash_name
@@ -89,7 +86,6 @@ class DBWorker(threading.Thread):
                     self.db.save_sale(session, item, sale_data)
 
                 finally:
-                    # IMPORTANT: always mark task done once per queue item
                     self.q.task_done()
 
         logger.debug(f"Saved batch of {len(batch)} sales")

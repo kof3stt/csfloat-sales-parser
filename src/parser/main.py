@@ -1,7 +1,9 @@
 import time
 import logging
+from typing import Any
 
-from src.parser.parser import CSFloatParser
+from src.parser.config_loader import load_config
+from src.parser.factory import create_parser
 from src.parser.backup import create_db_backup
 
 logger = logging.getLogger("main")
@@ -12,23 +14,31 @@ def run_parser() -> None:
     Application entrypoint.
 
     Responsibilities:
-    - Start parser
-    - Wait for completion
-    - Ensure all DB tasks are processed
-    - Create backup (if enabled)
-    - Measure execution time
+    - Load configuration
+    - Create parser instance
+    - Run parsing lifecycle
+    - Ensure DB queue completion
+    - Create backup
+    - Log execution time
     """
 
     start_time = time.perf_counter()
+    config = load_config()
+
+    parser: Any = None
 
     try:
-        with CSFloatParser() as parser:
+        parser = create_parser(config)
+
+        with parser:
             parser.login()
             parser.start()
 
-            parser.queue.join()
+            queue = getattr(parser, "queue", None)
+            if queue is not None:
+                queue.join()
 
-            logger.info("All queue tasks processed")
+            logger.info("All tasks processed")
 
     except KeyboardInterrupt:
         logger.warning("Interrupted by user (KeyboardInterrupt)")
@@ -44,8 +54,6 @@ def run_parser() -> None:
 
     elapsed = time.perf_counter() - start_time
     logger.info(f"Execution time: {elapsed:.2f}s")
-
-    print(f"Execution time: {elapsed:.2f}s")
 
 
 if __name__ == "__main__":
